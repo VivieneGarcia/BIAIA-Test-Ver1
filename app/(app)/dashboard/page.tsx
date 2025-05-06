@@ -493,7 +493,10 @@ WHERE NOT EXISTS (SELECT 1 FROM weekly_tips WHERE week_number = week_num);`}
                       </p>
                     </div>
                     {appointment.reminder && (
-                      <span className="rounded-full bg-primary/10 px-2 py-1 text-xs text-primary">Reminder set</span>
+                      <span className="inline-flex items-center rounded-xl bg-pink-100 px-3 py-0.5 text-xs font-medium text-pink-700 shadow-sm" >
+                      Reminder Set
+                    </span>
+                    
                     )}
                   </li>
                 ))}

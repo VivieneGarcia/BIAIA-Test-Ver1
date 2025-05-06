@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Send } from "lucide-react"
+import axios from 'axios';  
 
 type Message = {
   id: string
@@ -70,146 +71,160 @@ export default function ChatPage() {
   }
 
   const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!input.trim() || isLoading) return
-
+    e.preventDefault();
+  
+    if (!input.trim() || isLoading) return;
+  
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
       content: input,
       timestamp: new Date(),
-    }
+    };
+  
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+  
+    // Call the AI response with async function
+    const aiResponse = await generateAIResponse(input, profile);
+  
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: aiResponse,
+        timestamp: new Date(),
+      },
+    ]);
+  
+    setIsLoading(false);
+  };
 
-    setMessages((prev) => [...prev, userMessage])
-    setInput("")
-    setIsLoading(true)
+  // Inside your ChatPage component
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponse = generateAIResponse(input, profile)
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: aiResponse,
-          timestamp: new Date(),
-        },
-      ])
-
-      setIsLoading(false)
-    }, 1000)
-  }
-
-  // Placeholder function to generate AI responses
-  const generateAIResponse = (message: string, profile: Profile | null): string => {
-    const lowerMessage = message.toLowerCase()
-
+  const generateAIResponse = async (message: string, profile: Profile | null): Promise<string> => {
+    const lowerMessage = message.toLowerCase();
+  
+    // If the profile exists, include personalized info
     if (profile) {
-      // Calculate current week of pregnancy
-      const currentDate = new Date()
-      const dueDate = new Date(profile.due_date)
-      const pregnancyWeek = 40 - Math.floor((dueDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24 * 7))
+      const currentDate = new Date();
+      const dueDate = new Date(profile.due_date);
+      const pregnancyWeek = 40 - Math.floor((dueDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24 * 7));
+  
+      // Prepare the prompt for Gemini AI
+      const prompt = `
+      
+You name is Bembang, assisting a user who is currently ${pregnancyWeek} weeks pregnant. Their due date is ${dueDate} Their name is ${profile.name}.  Their reported symptoms include: ${profile.symptoms ? profile.symptoms.join(", ") : "None reported."} and their allergies include: ${profile.allergies ? profile.allergies.join(", ") : "None reported."}
 
-      if (lowerMessage.includes("week") || lowerMessage.includes("progress")) {
-        return `You're currently in week ${pregnancyWeek} of your pregnancy. This is an exciting time! The baby is continuing to develop and grow.`
-      }
+When responding:
+- Offer clear, medically accurate advice in a calm, friendly, and empathetic tone.
+- If the user’s question involves any symptoms or medical concerns, gently encourage them to reach out to a healthcare provider for personalized care, especially if the symptoms seem worrisome or severe. Always approach with kindness and concern for their well-being.
+- Keep your advice direct but comforting. 
+- Use emojis to make it more readable
+- Give concise like somewhere around 30 words but complete answers. If you need to make it long, then do it. The user may adhd tendency so they might have low attention span. But don't tell them
+- Make important answer bold! 
+- If they speak tagalog, use tagalog as language. Otherwise, use english.
+- Use bullet points to break down information where it makes it easier for the user to follow. (•)
+- If the user questions and talks about Sex, replace "Sex" as "Bembang (Sex)" and make sure to make that word bold. 
+- Do not repeat the user’s pregnancy details, symptoms, or allergies unless it's necessary for context, but always make sure the response is relevant to their current question.
 
-      if (lowerMessage.includes("symptom") || lowerMessage.includes("feeling")) {
-        if (profile.symptoms && profile.symptoms.length > 0) {
-          return `I see you've mentioned experiencing ${profile.symptoms.join(", ")}. These are common symptoms during pregnancy. Make sure to discuss any severe or concerning symptoms with your healthcare provider.`
+User's question: "${message}"
+`;
+
+
+  
+      try {
+        console.log('Sending request to Gemini API...');
+        const response = await axios.post('api/gemini', { prompt });
+  
+        // Log the entire response to check its structure
+        console.log('Received response from Gemini:', JSON.stringify(response.data, null, 2));
+
+  
+        // Assuming the reply is inside a specific field, adjust this according to the logged response
+        if (response.data && response.data.reply) {
+          return response.data.reply;
         } else {
-          return `How are you feeling today? It's important to keep track of any symptoms you experience during your pregnancy.`
+          return "Sorry, I'm having trouble getting a response from the AI.";
         }
-      }
-
-      if (lowerMessage.includes("allerg")) {
-        if (profile.allergies && profile.allergies.length > 0) {
-          return `I see you've noted allergies to ${profile.allergies.join(", ")}. It's important to avoid these allergens and discuss with your doctor how to manage them during pregnancy.`
-        } else {
-          return `I don't see any allergies listed in your profile. If you have any allergies, please update your profile so I can provide better guidance.`
-        }
-      }
-
-      if (lowerMessage.includes("eat") || lowerMessage.includes("food") || lowerMessage.includes("diet")) {
-        return `A balanced diet is crucial during pregnancy. Focus on fruits, vegetables, whole grains, lean proteins, and dairy. Avoid raw or undercooked meats, unpasteurized dairy, high-mercury fish, and excessive caffeine.`
-      }
-
-      if (lowerMessage.includes("exercise") || lowerMessage.includes("workout")) {
-        return `Regular exercise during pregnancy can help reduce backaches, constipation, bloating, and swelling. Good options include walking, swimming, and prenatal yoga. Always consult with your healthcare provider before starting any exercise routine.`
+      } catch (error) {
+        console.error("Error contacting Gemini AI:", error);
+        return "Sorry, I'm having trouble connecting to my AI assistant. Please try again later.";
       }
     }
+  
+    // Default response if no profile is available
+    return `I'm here to help with your pregnancy journey. You can ask me about your symptoms, diet recommendations, safe exercises, or general pregnancy information.`;
+  };
+  
+  
 
-    // Default responses
-    if (lowerMessage.includes("hello") || lowerMessage.includes("hi")) {
-      return `Hello! How can I assist you with your pregnancy journey today?`
-    }
+  
 
-    if (lowerMessage.includes("thank")) {
-      return `You're welcome! I'm here to help with any questions you have about your pregnancy.`
-    }
-
-    return `I'm here to help with your pregnancy journey. You can ask me about your symptoms, diet recommendations, safe exercises, or general pregnancy information.`
-  }
 
   return (
     <div className="container mx-auto flex h-[calc(100vh-4rem)] flex-col px-4 py-8">
       <Card className="flex h-full flex-col">
         <CardHeader>
-          <CardTitle>AI Pregnancy Assistant</CardTitle>
+          <CardTitle>Hi, I'm Bembang!</CardTitle>
           <CardDescription>Ask questions about your pregnancy journey</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 overflow-y-auto p-4">
-          <div className="space-y-4">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`flex max-w-[80%] items-start space-x-2 rounded-lg p-3 ${
-                    message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
-                  }`}
-                >
-                  {message.role === "assistant" && (
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>AI</AvatarFallback>
-                    </Avatar>
-                  )}
-                  <div>
-                    <p>{message.content}</p>
-                    <p className="mt-1 text-xs opacity-70">
-                      {message.timestamp.toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="flex max-w-[80%] items-center space-x-2 rounded-lg bg-muted p-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>AI</AvatarFallback>
-                  </Avatar>
-                  <div className="flex space-x-1">
-                    <div className="h-2 w-2 animate-bounce rounded-full bg-foreground/50"></div>
-                    <div
-                      className="h-2 w-2 animate-bounce rounded-full bg-foreground/50"
-                      style={{ animationDelay: "0.2s" }}
-                    ></div>
-                    <div
-                      className="h-2 w-2 animate-bounce rounded-full bg-foreground/50"
-                      style={{ animationDelay: "0.4s" }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
+  <div className="space-y-4">
+    {messages.map((message) => (
+      <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+        <div
+          className={`flex max-w-[80%] items-start space-x-2 rounded-lg p-3 ${
+            message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
+          }`}
+        >
+          {message.role === "assistant" && (
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="font-bold">B</AvatarFallback>
+            </Avatar>
+          )}
+          <div>
+            <p
+              dangerouslySetInnerHTML={{
+                __html: message.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/- /g, '• ').replace(/\n/g, '<br />')
+              }}
+            />
+            <p className="mt-1 text-xs opacity-70">
+              {message.timestamp.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
           </div>
-        </CardContent>
+        </div>
+      </div>
+    ))}
+    {isLoading && (
+      <div className="flex justify-start">
+        <div className="flex max-w-[80%] items-center space-x-2 rounded-lg bg-muted p-3">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback>AI</AvatarFallback>
+          </Avatar>
+          <div className="flex space-x-1">
+            <div className="h-2 w-2 animate-bounce rounded-full bg-foreground/50"></div>
+            <div
+              className="h-2 w-2 animate-bounce rounded-full bg-foreground/50"
+              style={{ animationDelay: "0.2s" }}
+            ></div>
+            <div
+              className="h-2 w-2 animate-bounce rounded-full bg-foreground/50"
+              style={{ animationDelay: "0.4s" }}
+            ></div>
+          </div>
+        </div>
+      </div>
+    )}
+    <div ref={messagesEndRef} />
+  </div>
+</CardContent>
+
         <CardFooter className="border-t p-4">
           <form onSubmit={handleSendMessage} className="flex w-full space-x-2">
             <Input

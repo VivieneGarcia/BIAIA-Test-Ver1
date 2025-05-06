@@ -1,8 +1,6 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useSupabaseAuth } from "@/components/providers/supabase-auth-provider"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -10,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CalendarIcon, Plus, Edit, Trash2, Clock, MapPin, Search } from "lucide-react"
+import { CalendarIcon, Plus, Edit, Trash2, Clock, MapPin, Search, Phone, Globe } from "lucide-react"
 import { format, compareAsc, parseISO } from "date-fns"
 import { cn } from "@/lib/utils"
 import { Calendar } from "@/components/ui/calendar"
@@ -26,15 +24,43 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import type { Appointment } from "@/lib/types"
 
-// Declare mapboxgl as a global variable
-declare global {
-  interface Window {
-    mapboxgl: any
-  }
+
+interface Clinic {
+  fsq_id: string;
+  name: string;
+  location: {
+    address: string;
+    locality: string;
+    region: string;
+    postcode: string;
+    country: string;
+    formatted_address: string;
+  };
+  tel?: string;
+  website?: string;
+  categories: {
+    id: number;
+    name: string;
+  }[];
+  rating?: number;
 }
 
+const popularClinics = [
+  {
+    id: 1,
+    name: 'Example Clinic',
+    address: '123 Clinic St',
+    phone: '123-456-7890',
+    website: 'http://example.com',
+    specialties: ['OBGYN'],
+    rating: 4.5,
+  },
+  // More clinics...
+];
 export default function AppointmentsPage() {
   const { user } = useSupabaseAuth()
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -50,13 +76,46 @@ export default function AppointmentsPage() {
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [clinics, setClinics] = useState<Clinic[]>([])
   const [isSearching, setIsSearching] = useState(false)
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null)
-  const mapRef = useRef<HTMLDivElement>(null)
-  const mapInstance = useRef<any>(null)
-  const [mapError, setMapError] = useState(false)
+  const [locationInput, setLocationInput] = useState("");
+  const [suggestions, setSuggestions] = useState<{ place_name: string }[]>([]);
+  const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([
+    "15039", // Default: OB-GYN
+  ]);
+  
+  const categoryOptions = [
+    { id: "15039", name: "Obstetrician Gynecologist (Ob-gyn)" },
+    { id: "15056", name: "Women's Health Clinic" },
+    { id: "15014", name: "Hospital" },
+    { id: "15059", name: "Hospital Unit" },
+    { id: "15008", name: "Emergency Service" },
+    { id: "15015", name: "Maternity Clinic" },
+    { id: "15019", name: "Mental Health Clinic" },
+  ];
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (locationInput.trim().length >= 2) {
+        setIsFetchingSuggestions(true);
+        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(locationInput)}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&autocomplete=true&limit=5`)
+          .then(res => res.json())
+          .then(data => {
+            const places = data.features.map((feature: any) => ({
+              place_name: feature.place_name,
+            }));
+            setSuggestions(places);
+          })
+          .catch(() => setSuggestions([]))
+          .finally(() => setIsFetchingSuggestions(false));
+      } else {
+        setSuggestions([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [locationInput]);
 
   // Group appointments by date for calendar view
   const appointmentsByDate: Record<string, Appointment[]> = {}
@@ -91,141 +150,7 @@ export default function AppointmentsPage() {
 
   useEffect(() => {
     fetchAppointments()
-    getUserLocation()
   }, [user])
-
-  useEffect(() => {
-    if (mapRef.current && userLocation && typeof window !== "undefined") {
-      // Check if mapboxgl is already available
-      if (window.mapboxgl) {
-        initializeMap()
-      } else {
-        // If not available, set up a listener for when the script loads
-        const checkMapboxLoaded = setInterval(() => {
-          if (window.mapboxgl) {
-            clearInterval(checkMapboxLoaded)
-            initializeMap()
-          }
-        }, 100)
-
-        // Clear interval after 10 seconds to prevent infinite checking
-        setTimeout(() => clearInterval(checkMapboxLoaded), 10000)
-      }
-    }
-  }, [userLocation, mapRef.current])
-
-  const getUserLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          })
-        },
-        (error) => {
-          console.error("Error getting location:", error)
-          // Default to a central location if geolocation fails
-          setUserLocation({
-            latitude: 40.7128,
-            longitude: -74.006,
-          })
-        },
-      )
-    }
-  }
-
-  const initializeMap = async () => {
-    if (!mapRef.current || !userLocation || mapInstance.current) return
-
-    // Wait for mapboxgl to be available
-    if (typeof window === "undefined" || !window.mapboxgl) {
-      console.log("Mapbox GL JS is not loaded yet, will retry")
-      // Retry after a short delay
-      setTimeout(initializeMap, 500)
-      return
-    }
-
-    try {
-      // @ts-ignore
-      window.mapboxgl.accessToken =
-        "pk.eyJ1IjoiYmlhaWEiLCJhIjoiY2xzMnRxZXJsMDFvMzJrcGR5ZWVxdWVrZSJ9.Wy_XCBMEGvktbfLVW0KXHA"
-
-      // @ts-ignore
-      mapInstance.current = new window.mapboxgl.Map({
-        container: mapRef.current,
-        style: "mapbox://styles/mapbox/streets-v11",
-        center: [userLocation.longitude, userLocation.latitude],
-        zoom: 12,
-      })
-
-      // Add user marker
-      // @ts-ignore
-      new window.mapboxgl.Marker({ color: "#ec4899" })
-        .setLngLat([userLocation.longitude, userLocation.latitude])
-        .addTo(mapInstance.current)
-
-      // Add navigation controls
-      // @ts-ignore
-      mapInstance.current.addControl(new window.mapboxgl.NavigationControl())
-    } catch (error) {
-      console.error("Error initializing map:", error)
-      setMapError(true)
-    }
-  }
-
-  const searchClinics = async () => {
-    if (!userLocation) return
-
-    setIsSearching(true)
-    setSearchResults([])
-
-    try {
-      const query = searchQuery || "OBGYN clinic"
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?proximity=${userLocation.longitude},${userLocation.latitude}&types=poi&access_token=pk.eyJ1IjoiYmlhaWEiLCJhIjoiY2xzMnRxZXJsMDFvMzJrcGR5ZWVxdWVrZSJ9.Wy_XCBMEGvktbfLVW0KXHA`,
-      )
-      const data = await response.json()
-
-      setSearchResults(data.features || [])
-
-      // Update map with markers
-      if (mapInstance.current) {
-        // Remove existing markers except user location
-        const markers = document.querySelectorAll(".mapboxgl-marker:not(:first-child)")
-        markers.forEach((marker) => marker.remove())
-
-        // Add markers for search results
-        data.features.forEach((location: any) => {
-          const popup = new window.mapboxgl.Popup({ offset: 25 }).setHTML(
-            `<h3>${location.text}</h3><p>${location.place_name}</p>`,
-          )
-
-          // @ts-ignore
-          new window.mapboxgl.Marker().setLngLat(location.center).setPopup(popup).addTo(mapInstance.current)
-        })
-
-        // Fit bounds to include all markers if there are results
-        if (data.features.length > 0) {
-          const bounds = new window.mapboxgl.LngLatBounds()
-          bounds.extend([userLocation.longitude, userLocation.latitude])
-
-          data.features.forEach((location: any) => {
-            bounds.extend(location.center)
-          })
-
-          mapInstance.current.fitBounds(bounds, {
-            padding: 50,
-            maxZoom: 15,
-          })
-        }
-      }
-    } catch (error) {
-      console.error("Error searching for clinics:", error)
-    } finally {
-      setIsSearching(false)
-    }
-  }
 
   const fetchAppointments = async () => {
     if (!user) return
@@ -341,6 +266,87 @@ export default function AppointmentsPage() {
       console.error("Error deleting appointment:", error.message)
     }
   }
+
+  const searchOBGYNClinics = async () => {
+    setIsSearching(true);
+    setError(null);
+    setClinics([]); 
+    setSuggestions([]); // This hides the dropdown
+  
+    try {
+      // Step 1: Geocode with Mapbox
+      const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+      const geoResponse = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(locationInput)}.json?access_token=${mapboxToken}`
+      );
+  
+      if (!geoResponse.ok) {
+        throw new Error('Failed to geocode location');
+      }
+  
+      const geoData = await geoResponse.json();
+      const coordinates = geoData.features?.[0]?.center;
+  
+      if (!coordinates) {
+        throw new Error('Location not found');
+      }
+  
+      const [longitude, latitude] = coordinates;
+      // Include both OBGYN and hospital category IDs
+      const categories = selectedCategories.join(',');
+      const radius = 5000; // 5km
+      const limit = 10;
+  
+      // Step 2: Search with Foursquare using lat/lng
+      const foursquareKey = process.env.NEXT_PUBLIC_FOURSQUARE_API_KEY || '';
+      const searchResponse = await fetch(
+        `https://api.foursquare.com/v3/places/search?ll=${latitude},${longitude}&categories=${categories}&radius=${radius}&limit=${limit}`,
+        {
+          headers: {
+            'Authorization': foursquareKey,
+            'Accept': 'application/json'
+          }
+        }
+      );
+  
+      if (!searchResponse.ok) {
+        throw new Error('Failed to search for clinics');
+      }
+  
+      const searchData = await searchResponse.json();
+  
+      // Map through the search results to extract necessary data
+      const mappedClinics = searchData.results.map((clinic: any) => ({
+        fsq_id: clinic.fsq_id, // Ensure fsq_id is set
+        name: clinic.name,
+        location: {
+          address: clinic.location.formatted_address,
+          locality: clinic.location.locality || '',
+          region: clinic.location.region || '',
+          postcode: clinic.location.postcode || '',
+          country: clinic.location.country || '',
+          formatted_address: clinic.location.formatted_address,
+          lat: clinic.geocodes?.main?.latitude, // Extract lat from geocodes.main
+          lng: clinic.geocodes?.main?.longitude, // Extract lng from geocodes.main
+        },
+        categories: clinic.categories.map((category: any) => ({
+          id: category.id, // Ensure categories have the correct structure
+          name: category.name,
+        })),
+        tel: clinic.contact?.formatted_phone || '', // Add fallback for phone number
+        website: clinic.url || '', // Add fallback for website
+        rating: clinic.rating || 0, // Add fallback for rating
+      }));
+  
+      setClinics(mappedClinics); // Update the state with the mapped clinics
+    } catch (error: any) {
+      setError(error.message);
+      setClinics([]); // Clear the clinics on error
+    } finally {
+      setIsSearching(false);
+    }
+  };
+  
 
   // Get appointments for the selected date
   const selectedDateStr = format(selectedDate, "yyyy-MM-dd")
@@ -544,76 +550,151 @@ export default function AppointmentsPage() {
         </TabsContent>
 
         <TabsContent value="find">
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Find OBGYN Clinics & Hospitals</CardTitle>
-              <CardDescription>Locate healthcare facilities near you</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 mb-4">
-                <Input
-                  placeholder="Search for OBGYN clinics, hospitals..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1"
-                />
-                <Button onClick={searchClinics} disabled={isSearching}>
-                  {isSearching ? "Searching..." : "Search"}
-                  <Search className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Map container */}
-              {mapError ? (
-                <div className="w-full h-[400px] rounded-md bg-muted mb-4 flex items-center justify-center flex-col p-4">
-                  <p className="text-center mb-2">
-                    Unable to load the map. Please check your internet connection and try again.
-                  </p>
-                  <Button
+  <Card className="mb-6">
+    <CardHeader>
+      <CardTitle>Find OBGYN Clinics</CardTitle>
+      <CardDescription>Discover nearby OBGYN clinics and hospitals</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <div className="flex flex-col gap-4 mb-6">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Input
+              placeholder="Enter a location (e.g. city, address)"
+              value={locationInput}
+              onChange={(e) => setLocationInput(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            {suggestions.length > 0 && (
+              <ul className="absolute z-50 w-full bg-white border rounded-lg shadow-lg mt-1 max-h-60 overflow-auto">
+                {suggestions.map((suggestion, index) => (
+                  <li
+                    key={index}
+                    className="p-3 hover:bg-gray-200 cursor-pointer transition-colors"
                     onClick={() => {
-                      setMapError(false)
-                      initializeMap()
+                      setLocationInput(suggestion.place_name);
+                      setSuggestions([]);
                     }}
                   >
-                    Retry Loading Map
-                  </Button>
-                </div>
-              ) : (
-                <div ref={mapRef} className="w-full h-[400px] rounded-md bg-muted mb-4"></div>
-              )}
+                    {suggestion.place_name}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <Button
+            onClick={searchOBGYNClinics}
+            disabled={isSearching || !locationInput.trim()}
+            className="w-auto p-3 bg-primary text-white rounded-lg"
+          >
+            {isSearching ? "Searching..." : "Search"}
+            <Search className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+      </div>
+      <div>
+  <h4 className="font-medium mb-2">Include Categories:</h4>
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+    {categoryOptions.map((category) => (
+      <label key={category.id} className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          value={category.id}
+          checked={selectedCategories.includes(category.id)}
+          onChange={(e) => {
+            const id = e.target.value;
+            setSelectedCategories((prev) =>
+              e.target.checked
+                ? [...prev, id]
+                : prev.filter((catId) => catId !== id)
+            );
+          }}
+        />
+        <span className="text-sm">{category.name}</span>
+      </label>
+    ))}
+  </div>
+</div>
 
-              {/* Search results */}
-              <div className="space-y-3 mt-4">
-                <h3 className="font-medium">Search Results</h3>
-                {searchResults.length > 0 ? (
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                    {searchResults.map((result, index) => (
-                      <div key={index} className="border rounded-md p-3">
-                        <h4 className="font-medium">{result.text}</h4>
-                        <p className="text-sm text-muted-foreground">{result.place_name}</p>
-                        <div className="flex items-center mt-2">
-                          <MapPin className="h-4 w-4 text-muted-foreground mr-1" />
-                          <a
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${result.center[1]},${result.center[0]}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-primary hover:underline"
-                          >
-                            Get Directions
-                          </a>
-                        </div>
-                      </div>
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium">
+          {locationInput ? "Nearby OBGYN Clinics" : "Enter a location to find clinics"}
+        </h3>
+
+        {isSearching ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <p className="mt-2 text-muted-foreground">Searching for OBGYN clinics...</p>
+          </div>
+        ) : clinics.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {clinics.map((clinic) => (
+              <Card key={clinic.fsq_id} className="overflow-hidden">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">{clinic.name}</CardTitle>
+                  <CardDescription className="flex items-center">
+                    <MapPin className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                    {clinic.location.formatted_address || `${clinic.location.address}, ${clinic.location.locality}`}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pb-2">
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {clinic.categories.map((category) => (
+                      <Badge key={category.id} variant="secondary" className="text-xs">
+                        {category.name}
+                      </Badge>
                     ))}
                   </div>
-                ) : (
-                  <p className="text-muted-foreground">
-                    {isSearching ? "Searching..." : "Search for clinics or hospitals to see results"}
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  <div className="space-y-1 text-sm">
+                    {clinic.tel && (
+                      <div className="flex items-center">
+                        <Phone className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                        <a href={`tel:${clinic.tel}`} className="hover:underline">
+                          {clinic.tel}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+                <CardFooter className="pt-2">
+                <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  const { lat, lng } = clinic.location; // Assuming clinic has lat and lng fields
+                  const locationUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+                  window.open(locationUrl, '_blank');
+                }}
+              >
+                <MapPin className="mr-2 h-4 w-4" />
+                Get Directions
+              </Button>
+
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        ) : locationInput ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No OBGYN clinics found in this area.</p>
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">Please enter a location to search for OBGYN clinics.</p>
+          </div>
+        )}
+      </div>
+    </CardContent>
+  </Card>
+</TabsContent>
+
+
       </Tabs>
 
       {/* Delete Confirmation Dialog */}
@@ -729,3 +810,4 @@ export default function AppointmentsPage() {
     </div>
   )
 }
+

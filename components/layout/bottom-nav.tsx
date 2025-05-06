@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Calendar, BookOpen, MessageCircle, User } from "lucide-react"
+import { Home, Calendar, BookOpen, MessageCircle, User, AlarmClock } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
 
@@ -28,9 +28,9 @@ const navItems = [
     icon: MessageCircle,
   },
   {
-    name: "Profile",
-    href: "/profile",
-    icon: User,
+    name: "Appts",
+    href: "/appointments",
+    icon: AlarmClock,
   },
 ]
 

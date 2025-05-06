@@ -147,10 +147,9 @@ export default function ProfilePage() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col items-center">
-                <Avatar className="h-24 w-24">
-                  <AvatarImage src="/placeholder.svg" alt={name} />
-                  <AvatarFallback>{name.charAt(0)}</AvatarFallback>
-                </Avatar>
+              <Avatar className="h-24 w-24 bg-pink-100">
+                <AvatarFallback className="text-7xl">💗</AvatarFallback>
+              </Avatar>
                 <h2 className="mt-4 text-xl font-bold">{name}</h2>
                 <p className="text-sm text-muted-foreground">{user?.email}</p>
                 <div className="mt-4 w-full">
