@@ -56,6 +56,7 @@ export default function AppointmentsPage() {
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null)
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
+  const [mapError, setMapError] = useState(false)
 
   // Group appointments by date for calendar view
   const appointmentsByDate: Record<string, Appointment[]> = {}
@@ -95,7 +96,21 @@ export default function AppointmentsPage() {
 
   useEffect(() => {
     if (mapRef.current && userLocation && typeof window !== "undefined") {
-      initializeMap()
+      // Check if mapboxgl is already available
+      if (window.mapboxgl) {
+        initializeMap()
+      } else {
+        // If not available, set up a listener for when the script loads
+        const checkMapboxLoaded = setInterval(() => {
+          if (window.mapboxgl) {
+            clearInterval(checkMapboxLoaded)
+            initializeMap()
+          }
+        }, 100)
+
+        // Clear interval after 10 seconds to prevent infinite checking
+        setTimeout(() => clearInterval(checkMapboxLoaded), 10000)
+      }
     }
   }, [userLocation, mapRef.current])
 
@@ -123,6 +138,14 @@ export default function AppointmentsPage() {
   const initializeMap = async () => {
     if (!mapRef.current || !userLocation || mapInstance.current) return
 
+    // Wait for mapboxgl to be available
+    if (typeof window === "undefined" || !window.mapboxgl) {
+      console.log("Mapbox GL JS is not loaded yet, will retry")
+      // Retry after a short delay
+      setTimeout(initializeMap, 500)
+      return
+    }
+
     try {
       // @ts-ignore
       window.mapboxgl.accessToken =
@@ -147,6 +170,7 @@ export default function AppointmentsPage() {
       mapInstance.current.addControl(new window.mapboxgl.NavigationControl())
     } catch (error) {
       console.error("Error initializing map:", error)
+      setMapError(true)
     }
   }
 
@@ -540,7 +564,23 @@ export default function AppointmentsPage() {
               </div>
 
               {/* Map container */}
-              <div ref={mapRef} className="w-full h-[400px] rounded-md bg-muted mb-4"></div>
+              {mapError ? (
+                <div className="w-full h-[400px] rounded-md bg-muted mb-4 flex items-center justify-center flex-col p-4">
+                  <p className="text-center mb-2">
+                    Unable to load the map. Please check your internet connection and try again.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setMapError(false)
+                      initializeMap()
+                    }}
+                  >
+                    Retry Loading Map
+                  </Button>
+                </div>
+              ) : (
+                <div ref={mapRef} className="w-full h-[400px] rounded-md bg-muted mb-4"></div>
+              )}
 
               {/* Search results */}
               <div className="space-y-3 mt-4">

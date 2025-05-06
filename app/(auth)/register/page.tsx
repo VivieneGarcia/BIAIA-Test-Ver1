@@ -34,7 +34,7 @@ export default function RegisterPage() {
 
     try {
       await signUp(email, password)
-      router.push("/onboarding")
+      router.push("/login")
     } catch (error: any) {
       setError(error.message || "Failed to sign up")
     } finally {

@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -29,16 +28,33 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1)
   const router = useRouter()
 
-  useState(() => {
+  useEffect(() => {
     async function getUser() {
-      const { data } = await supabase.auth.getUser()
-      setUser(data.user)
+      const { data: userData } = await supabase.auth.getUser()
+      setUser(userData.user)
+
+      if (userData.user) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", userData.user.id)
+          .single()
+
+        // Only redirect if onboarding is marked complete
+        if (profileData?.onboarding_complete) {
+          router.push("/dashboard")
+        }
+      } else {
+        router.push("/login")
+      }
     }
     getUser()
-  })
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (step !== 3) return
 
     if (!user) {
       setError("You must be logged in to complete onboarding")
@@ -54,22 +70,27 @@ export default function OnboardingPage() {
     setError(null)
 
     try {
-      const { error } = await supabase.from("profiles").insert({
+      const { error } = await supabase.from("profiles").upsert({
         user_id: user.id,
         name,
         due_date: dueDate.toISOString(),
         symptoms: symptoms ? symptoms.split(",").map((s) => s.trim()) : [],
         allergies: allergies ? allergies.split(",").map((a) => a.trim()) : [],
-      })
+        onboarding_complete: true,
+      }, { onConflict: 'user_id' })
 
       if (error) throw error
 
-      router.push("/welcome")
+      router.push("/dashboard")
     } catch (error: any) {
       setError(error.message || "Failed to complete onboarding")
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleDateSelect = (date: Date | undefined) => {
+    setDueDate(date)
   }
 
   const nextStep = () => {
@@ -153,10 +174,11 @@ export default function OnboardingPage() {
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button
+                          type="button"
                           variant={"outline"}
                           className={cn(
                             "w-full justify-start text-left font-normal text-lg",
-                            !dueDate && "text-muted-foreground",
+                            !dueDate && "text-muted-foreground"
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
@@ -164,7 +186,7 @@ export default function OnboardingPage() {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
-                        <Calendar mode="single" selected={dueDate} onSelect={setDueDate} initialFocus />
+                        <Calendar mode="single" selected={dueDate} onSelect={handleDateSelect} initialFocus />
                       </PopoverContent>
                     </Popover>
                   </div>

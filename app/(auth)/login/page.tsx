@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +20,8 @@ export default function LoginPage() {
   const [loginStatus, setLoginStatus] = useState<string | null>(null)
   const [debugInfo, setDebugInfo] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isNewUser = searchParams.get("newUser") === "true"
 
   // Check if already logged in
   useEffect(() => {
@@ -27,7 +29,21 @@ export default function LoginPage() {
       const { data } = await supabase.auth.getSession()
       if (data.session) {
         setLoginStatus("Already logged in! Redirecting...")
-        window.location.href = "/dashboard"
+
+        // Check if user has completed onboarding
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", data.session.user.id)
+          .single()
+
+        if (profileError || !profileData) {
+          // If no profile exists or there's an error, user hasn't completed onboarding
+          window.location.href = "/onboarding"
+        } else {
+          // User has completed onboarding, go to dashboard
+          window.location.href = "/dashboard"
+        }
       }
     }
 
@@ -58,9 +74,22 @@ export default function LoginPage() {
         }),
       )
 
+      // Check if user has completed onboarding
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", data.user.id)
+        .single()
+
       // Use window.location for a hard redirect
       setTimeout(() => {
-        window.location.href = "/dashboard"
+        if (profileError || !profileData) {
+          // If no profile exists or there's an error, user hasn't completed onboarding
+          window.location.href = "/onboarding"
+        } else {
+          // User has completed onboarding, go to dashboard
+          window.location.href = "/dashboard"
+        }
       }, 1000)
     } catch (error: any) {
       console.error("Login error:", error)
@@ -80,7 +109,11 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">BIAIA</CardTitle>
-          <CardDescription className="text-center">Enter your email and password to sign in</CardDescription>
+          <CardDescription className="text-center">
+            {isNewUser
+              ? "Your account has been created! Please sign in to continue."
+              : "Enter your email and password to sign in"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
