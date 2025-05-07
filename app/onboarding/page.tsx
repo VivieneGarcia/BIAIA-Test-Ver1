@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
@@ -40,8 +41,9 @@ export default function OnboardingPage() {
           .eq("user_id", userData.user.id)
           .single()
 
-        // Only redirect if onboarding is marked complete
-        if (profileData?.onboarding_complete) {
+        console.log("Profile data:", profileData)
+        // Only redirect if onboarding is explicitly marked as complete
+        if (profileData && profileData.onboarding_complete === true) {
           router.push("/dashboard")
         }
       } else {
@@ -51,10 +53,14 @@ export default function OnboardingPage() {
     getUser()
   }, [router])
 
+  // Modified to prevent form submission until the final step
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (step !== 3) return
+    // Only process form submission if we're on the final step
+    if (step !== 3) {
+      return
+    }
 
     if (!user) {
       setError("You must be logged in to complete onboarding")
@@ -70,17 +76,17 @@ export default function OnboardingPage() {
     setError(null)
 
     try {
-      const { error } = await supabase.from("profiles").upsert({
+      const { error } = await supabase.from("profiles").insert({
         user_id: user.id,
         name,
         due_date: dueDate.toISOString(),
         symptoms: symptoms ? symptoms.split(",").map((s) => s.trim()) : [],
         allergies: allergies ? allergies.split(",").map((a) => a.trim()) : [],
-        onboarding_complete: true,
-      }, { onConflict: 'user_id' })
+      })
 
       if (error) throw error
 
+      // Redirect to dashboard after successful onboarding
       router.push("/dashboard")
     } catch (error: any) {
       setError(error.message || "Failed to complete onboarding")
@@ -89,11 +95,14 @@ export default function OnboardingPage() {
     }
   }
 
+  // Handle date selection separately from form submission
   const handleDateSelect = (date: Date | undefined) => {
     setDueDate(date)
+    // Don't do anything else here - just update the state
   }
 
   const nextStep = () => {
+    console.log("Current step:", step)
     if (step === 1 && !name) {
       setError("Please enter your name")
       return
@@ -104,6 +113,7 @@ export default function OnboardingPage() {
     }
     setError(null)
     setStep(step + 1)
+    console.log("Moving to step:", step + 1)
   }
 
   const prevStep = () => {
@@ -167,18 +177,18 @@ export default function OnboardingPage() {
               )}
 
               {step === 2 && (
-                <div className="space-y-4">
+                <div className="space-y-4" onSubmit={(e) => e.preventDefault()}>
                   <h2 className="text-lg font-medium">When is your baby due?</h2>
                   <div className="space-y-2">
                     <Label htmlFor="due-date">Due Date</Label>
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button
-                          type="button"
+                          type="button" // Explicitly set type to button
                           variant={"outline"}
                           className={cn(
                             "w-full justify-start text-left font-normal text-lg",
-                            !dueDate && "text-muted-foreground"
+                            !dueDate && "text-muted-foreground",
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
@@ -186,7 +196,15 @@ export default function OnboardingPage() {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
-                        <Calendar mode="single" selected={dueDate} onSelect={handleDateSelect} initialFocus />
+                        <Calendar
+                          mode="single"
+                          selected={dueDate}
+                          onSelect={(date) => {
+                            handleDateSelect(date)
+                            console.log("Date selected:", date)
+                          }}
+                          initialFocus
+                        />
                       </PopoverContent>
                     </Popover>
                   </div>
@@ -229,7 +247,13 @@ export default function OnboardingPage() {
               )}
 
               {step < 3 ? (
-                <Button type="button" onClick={nextStep}>
+                <Button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    nextStep()
+                  }}
+                >
                   Next
                 </Button>
               ) : (

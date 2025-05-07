@@ -38,10 +38,8 @@ export default function LoginPage() {
           .single()
 
         if (profileError || !profileData) {
-          // If no profile exists or there's an error, user hasn't completed onboarding
           window.location.href = "/onboarding"
         } else {
-          // User has completed onboarding, go to dashboard
           window.location.href = "/dashboard"
         }
       }
@@ -81,14 +79,11 @@ export default function LoginPage() {
         .eq("user_id", data.user.id)
         .single()
 
-      // Use window.location for a hard redirect
       setTimeout(() => {
         if (profileError || !profileData) {
-          // If no profile exists or there's an error, user hasn't completed onboarding
-          window.location.href = "/onboarding"
+          router.push("/onboarding")
         } else {
-          // User has completed onboarding, go to dashboard
-          window.location.href = "/dashboard"
+          router.push("/dashboard")
         }
       }, 1000)
     } catch (error: any) {

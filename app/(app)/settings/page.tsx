@@ -72,7 +72,6 @@ export default function SettingsPage() {
 
   const handleDeleteAccount = async () => {
     try {
-      // In a real app, you would need to implement a secure way to delete the user's account
       // This is just a placeholder
       await supabase.auth.signOut()
       router.push("/login")
